@@ -1,19 +1,22 @@
 import { Binding as CanvasCoordinateSpaceBinding } from 'fancy-canvas/coordinate-space';
 
 import { clearRect, drawScaled } from '../helpers/canvas-helpers';
+import { Delegate } from '../helpers/delegate';
 import { IDestroyable } from '../helpers/idestroyable';
+import { ISubscription } from '../helpers/isubscription';
 import { makeFont } from '../helpers/make-font';
 
 import { IDataSource } from '../model/idata-source';
 import { InvalidationLevel } from '../model/invalidate-mask';
 import { LayoutOptionsInternal } from '../model/layout-options';
 import { TextWidthCache } from '../model/text-width-cache';
+import { TickMarkWeight } from '../model/time-data';
 import { TimeMark } from '../model/time-scale';
 import { TimeAxisViewRendererOptions } from '../renderers/itime-axis-view-renderer';
 
 import { createBoundCanvas, getContext2D, Size } from './canvas-utils';
 import { ChartWidget } from './chart-widget';
-import { MouseEventHandler, MouseEventHandlers, TouchMouseEvent } from './mouse-event-handler';
+import { MouseEventHandler, MouseEventHandlers, MouseEventHandlerTouchEvent, TouchMouseEvent } from './mouse-event-handler';
 import { PriceAxisStub, PriceAxisStubParams } from './price-axis-stub';
 
 const enum Constants {
@@ -46,6 +49,7 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 	private _rendererOptions: TimeAxisViewRendererOptions | null = null;
 	private _mouseDown: boolean = false;
 	private _size: Size = new Size(0, 0);
+	private readonly _sizeChanged: Delegate<Size> = new Delegate();
 	private readonly _widthCache: TextWidthCache = new TextWidthCache(5);
 
 	public constructor(chartWidget: ChartWidget) {
@@ -98,8 +102,8 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 			this._topCanvasBinding.canvas,
 			this,
 			{
-				treatVertTouchDragAsPageScroll: true,
-				treatHorzTouchDragAsPageScroll: false,
+				treatVertTouchDragAsPageScroll: () => true,
+				treatHorzTouchDragAsPageScroll: () => false,
 			}
 		);
 	}
@@ -146,6 +150,10 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 		model.startScaleTime(event.localX);
 	}
 
+	public touchStartEvent(event: MouseEventHandlerTouchEvent): void {
+		this.mouseDownEvent(event);
+	}
+
 	public mouseDownOutsideEvent(): void {
 		const model = this._chart.model();
 		if (!model.timeScale().isEmpty() && this._mouseDown) {
@@ -165,7 +173,11 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 		model.scaleTimeTo(event.localX);
 	}
 
-	public mouseUpEvent(event: TouchMouseEvent): void {
+	public touchMoveEvent(event: MouseEventHandlerTouchEvent): void {
+		this.pressedMouseMoveEvent(event);
+	}
+
+	public mouseUpEvent(): void {
 		this._mouseDown = false;
 		const model = this._chart.model();
 		if (model.timeScale().isEmpty() && !this._chart.options().handleScale.axisPressedMouseMove.time) {
@@ -175,24 +187,36 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 		model.endScaleTime();
 	}
 
+	public touchEndEvent(): void {
+		this.mouseUpEvent();
+	}
+
 	public mouseDoubleClickEvent(): void {
 		if (this._chart.options().handleScale.axisDoubleClickReset) {
 			this._chart.model().resetTimeScale();
 		}
 	}
 
-	public mouseEnterEvent(e: TouchMouseEvent): void {
+	public doubleTapEvent(): void {
+		this.mouseDoubleClickEvent();
+	}
+
+	public mouseEnterEvent(): void {
 		if (this._chart.model().options().handleScale.axisPressedMouseMove.time) {
 			this._setCursor(CursorType.EwResize);
 		}
 	}
 
-	public mouseLeaveEvent(e: TouchMouseEvent): void {
+	public mouseLeaveEvent(): void {
 		this._setCursor(CursorType.Default);
 	}
 
 	public getSize(): Readonly<Size> {
 		return this._size;
+	}
+
+	public sizeChanged(): ISubscription<Size> {
+		return this._sizeChanged;
 	}
 
 	public setSizes(timeAxisSize: Size, leftStubWidth: number, rightStubWidth: number): void {
@@ -204,6 +228,8 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 
 			this._cell.style.width = timeAxisSize.w + 'px';
 			this._cell.style.height = timeAxisSize.h + 'px';
+
+			this._sizeChanged.fire(timeAxisSize);
 		}
 
 		if (this._leftStub !== null) {
@@ -294,9 +320,9 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 		let maxWeight = tickMarks.reduce(markWithGreaterWeight, tickMarks[0]).weight;
 
 		// special case: it looks strange if 15:00 is bold but 14:00 is not
-		// so if maxWeight > 30 and < 40 reduce it to 30
-		if (maxWeight > 30 && maxWeight < 40) {
-			maxWeight = 30;
+		// so if maxWeight > TickMarkWeight.Hour1 and < TickMarkWeight.Day reduce it to TickMarkWeight.Hour1
+		if (maxWeight > TickMarkWeight.Hour1 && maxWeight < TickMarkWeight.Day) {
+			maxWeight = TickMarkWeight.Hour1;
 		}
 
 		ctx.save();
@@ -349,6 +375,8 @@ export class TimeAxisWidget implements MouseEventHandlers, IDestroyable {
 				}
 			}
 		});
+
+		ctx.restore();
 	}
 
 	private _alignTickMarkLabelCoordinate(ctx: CanvasRenderingContext2D, coordinate: number, labelText: string): number {

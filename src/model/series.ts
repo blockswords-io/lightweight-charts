@@ -9,6 +9,7 @@ import { DeepPartial, isInteger, merge } from '../helpers/strict-type-checks';
 
 import { SeriesAreaPaneView } from '../views/pane/area-pane-view';
 import { SeriesBarsPaneView } from '../views/pane/bars-pane-view';
+import { SeriesBaselinePaneView } from '../views/pane/baseline-pane-view';
 import { SeriesCandlesticksPaneView } from '../views/pane/candlesticks-pane-view';
 import { SeriesHistogramPaneView } from '../views/pane/histogram-pane-view';
 import { IPaneView } from '../views/pane/ipane-view';
@@ -41,6 +42,7 @@ import { createSeriesPlotList, SeriesPlotList, SeriesPlotRow } from './series-da
 import { InternalSeriesMarker, SeriesMarker } from './series-markers';
 import {
 	AreaStyleOptions,
+	BaselineStyleOptions,
 	HistogramStyleOptions,
 	LineStyleOptions,
 	SeriesOptionsCommon,
@@ -50,16 +52,14 @@ import {
 } from './series-options';
 import { TimePoint, TimePointIndex } from './time-data';
 
-export interface LastValueDataResult {
-	noData: boolean;
-}
-
-export interface LastValueDataResultWithoutData extends LastValueDataResult {
+export interface LastValueDataResultWithoutData {
 	noData: true;
 }
 
-export interface LastValueDataResultWithData extends LastValueDataResult {
+export interface LastValueDataResultWithData {
 	noData: false;
+
+	price: number;
 	text: string;
 	formattedPriceAbsolute: string;
 	formattedPricePercentage: string;
@@ -68,11 +68,7 @@ export interface LastValueDataResultWithData extends LastValueDataResult {
 	index: TimePointIndex;
 }
 
-export interface LastValueDataResultWithRawPrice extends LastValueDataResultWithData {
-	price: number;
-}
-
-export type LastValueDataResultWithoutRawPrice = LastValueDataResultWithoutData | LastValueDataResultWithData;
+export type LastValueDataResult = LastValueDataResultWithoutData | LastValueDataResultWithData;
 
 export interface MarkerData {
 	price: BarPrice;
@@ -85,8 +81,13 @@ export interface SeriesDataAtTypeMap {
 	Bar: BarPrices;
 	Candlestick: BarPrices;
 	Area: BarPrice;
+	Baseline: BarPrice;
 	Line: BarPrice;
 	Histogram: BarPrice;
+}
+
+export interface SeriesUpdateInfo {
+	lastBarUpdatedOrNewBarsAddedToTheRight: boolean;
 }
 
 // TODO: uncomment following strings after fixing typescript bug
@@ -125,8 +126,8 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 
 		this._panePriceAxisView = new PanePriceAxisView(priceAxisView, this, model);
 
-		if (seriesType === 'Area' || seriesType === 'Line') {
-			this._lastPriceAnimationPaneView = new SeriesLastPriceAnimationPaneView(this as Series<'Area'> | Series<'Line'>);
+		if (seriesType === 'Area' || seriesType === 'Line' || seriesType === 'Baseline') {
+			this._lastPriceAnimationPaneView = new SeriesLastPriceAnimationPaneView(this as Series<'Area'> | Series<'Line'> | Series<'Baseline'>);
 		}
 
 		this._recreateFormatter();
@@ -144,20 +145,7 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		return this._options.priceLineColor || lastBarColor;
 	}
 
-	public lastValueData(globalLast: boolean, withRawPrice?: false): LastValueDataResultWithoutRawPrice;
-	public lastValueData(globalLast: boolean, withRawPrice: true): LastValueDataResultWithRawPrice;
-
-	// returns object with:
-	// formatted price
-	// raw price (if withRawPrice)
-	// coordinate
-	// color
-	// or { "noData":true } if last value could not be found
-	// NOTE: should NEVER return null or undefined!
-	public lastValueData(
-		globalLast: boolean,
-		withRawPrice?: boolean
-	): LastValueDataResultWithoutRawPrice | LastValueDataResultWithRawPrice {
+	public lastValueData(globalLast: boolean): LastValueDataResult {
 		const noDataRes: LastValueDataResultWithoutData = { noData: true };
 
 		const priceScale = this.priceScale();
@@ -204,7 +192,7 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 
 		return {
 			noData: false,
-			price: withRawPrice ? price : undefined,
+			price,
 			text: priceScale.formatPrice(price, firstValue.value),
 			formattedPriceAbsolute: priceScale.formatPriceAbsolute(price),
 			formattedPricePercentage: priceScale.formatPricePercentage(price, firstValue.value),
@@ -246,6 +234,12 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 
 		if (options.priceFormat !== undefined) {
 			this._recreateFormatter();
+
+			// updated formatter might affect rendering  and as a consequence of this the width of price axis might be changed
+			// thus we need to force the chart to do a full update to apply changes correctly
+			// full update is quite heavy operation in terms of performance
+			// but updating formatter looks like quite rare so forcing a full update here shouldn't affect the performance a lot
+			this.model().fullUpdate();
 		}
 
 		if (options.pane && previousPaneIndex !== options.pane) {
@@ -261,28 +255,21 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		this._paneView.update('options');
 	}
 
-	public clearData(): void {
-		this._data.clear();
-
-		// we must either re-create pane view on clear data
-		// or clear all caches inside pane views
-		// but currently we can't separate update/append last bar and full data replacement (update vs setData) in pane views invalidation
-		// so let's just re-create all views
-		this._recreatePaneViews();
-	}
-
-	public updateData(data: readonly SeriesPlotRow<T>[], clearData: boolean): void {
-		if (clearData) {
-			this._data.clear();
-		}
-
-		this._data.merge(data);
+	public setData(data: readonly SeriesPlotRow<T>[], updateInfo?: SeriesUpdateInfo): void {
+		this._data.setData(data);
 
 		this._recalculateMarkers();
 
 		this._paneView.update('data');
 		this._markersPaneView.update('data');
-		this._lastPriceAnimationPaneView?.update('data');
+
+		if (this._lastPriceAnimationPaneView !== null) {
+			if (updateInfo && updateInfo.lastBarUpdatedOrNewBarsAddedToTheRight) {
+				this._lastPriceAnimationPaneView.onNewRealtimeDataReceived();
+			} else if (data.length === 0) {
+				this._lastPriceAnimationPaneView.onDataCleared();
+			}
+		}
 
 		const sourcePane = this.model().paneForSource(this);
 		this.model().recalculatePane(sourcePane);
@@ -409,7 +396,7 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		return res;
 	}
 
-	public priceAxisViews(pane: Pane, priceScale: PriceScale): readonly IPriceAxisView[] {
+	public override priceAxisViews(pane: Pane, priceScale: PriceScale): readonly IPriceAxisView[] {
 		if (priceScale !== this._priceScale && !this._isOverlay()) {
 			return [];
 		}
@@ -457,13 +444,13 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		this._lastPriceAnimationPaneView?.update();
 	}
 
-	public priceScale(): PriceScale {
-		return ensureNotNull(this._priceScale);
+	public override priceScale(): PriceScale {
+		return ensureNotNull(super.priceScale());
 	}
 
 	public markerDataAtIndex(index: TimePointIndex): MarkerData | null {
-		const getValue = (this._seriesType === 'Line' || this._seriesType === 'Area') &&
-			(this._options as (LineStyleOptions | AreaStyleOptions)).crosshairMarkerVisible;
+		const getValue = (this._seriesType === 'Line' || this._seriesType === 'Area' || this._seriesType === 'Baseline') &&
+			(this._options as (LineStyleOptions | AreaStyleOptions | BaselineStyleOptions)).crosshairMarkerVisible;
 
 		if (!getValue) {
 			return null;
@@ -483,7 +470,7 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		return this._options.title;
 	}
 
-	public visible(): boolean {
+	public override visible(): boolean {
 		return this._options.visible;
 	}
 
@@ -499,7 +486,7 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 
 		// TODO: refactor this
 		// series data is strongly hardcoded to keep bars
-		const plots = this._seriesType === 'Line' || this._seriesType === 'Area' || this._seriesType === 'Histogram'
+		const plots = this._seriesType === 'Line' || this._seriesType === 'Area' || this._seriesType === 'Baseline' || this._seriesType === 'Histogram'
 			? [PlotRowValueIndex.Close]
 			: [PlotRowValueIndex.Low, PlotRowValueIndex.High];
 
@@ -520,7 +507,8 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 		switch (this._seriesType) {
 			case 'Line':
 			case 'Area':
-				return (this._options as (LineStyleOptions | AreaStyleOptions)).crosshairMarkerRadius;
+			case 'Baseline':
+				return (this._options as (LineStyleOptions | AreaStyleOptions | BaselineStyleOptions)).crosshairMarkerRadius;
 		}
 
 		return 0;
@@ -529,8 +517,9 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 	private _markerBorderColor(): string | null {
 		switch (this._seriesType) {
 			case 'Line':
-			case 'Area': {
-				const crosshairMarkerBorderColor = (this._options as (LineStyleOptions | AreaStyleOptions)).crosshairMarkerBorderColor;
+			case 'Area':
+			case 'Baseline': {
+				const crosshairMarkerBorderColor = (this._options as (LineStyleOptions | AreaStyleOptions | BaselineStyleOptions)).crosshairMarkerBorderColor;
 				if (crosshairMarkerBorderColor.length !== 0) {
 					return crosshairMarkerBorderColor;
 				}
@@ -543,8 +532,9 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 	private _markerBackgroundColor(index: TimePointIndex): string {
 		switch (this._seriesType) {
 			case 'Line':
-			case 'Area': {
-				const crosshairMarkerBackgroundColor = (this._options as (LineStyleOptions | AreaStyleOptions)).crosshairMarkerBackgroundColor;
+			case 'Area':
+			case 'Baseline': {
+				const crosshairMarkerBackgroundColor = (this._options as (LineStyleOptions | AreaStyleOptions | BaselineStyleOptions)).crosshairMarkerBackgroundColor;
 				if (crosshairMarkerBackgroundColor.length !== 0) {
 					return crosshairMarkerBackgroundColor;
 				}
@@ -632,6 +622,11 @@ export class Series<T extends SeriesType = SeriesType> extends PriceDataSource i
 
 			case 'Area': {
 				this._paneView = new SeriesAreaPaneView(this as Series<'Area'>, this.model());
+				break;
+			}
+
+			case 'Baseline': {
+				this._paneView = new SeriesBaselinePaneView(this as Series<'Baseline'>, this.model());
 				break;
 			}
 

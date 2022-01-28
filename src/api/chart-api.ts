@@ -15,6 +15,8 @@ import {
 	AreaSeriesPartialOptions,
 	BarSeriesOptions,
 	BarSeriesPartialOptions,
+	BaselineSeriesOptions,
+	BaselineSeriesPartialOptions,
 	CandlestickSeriesOptions,
 	CandlestickSeriesPartialOptions,
 	fillUpDownCandlesticksColors,
@@ -39,6 +41,7 @@ import { chartOptionsDefaults } from './options/chart-options-defaults';
 import {
 	areaStyleDefaults,
 	barStyleDefaults,
+	baselineStyleDefaults,
 	candlestickStyleDefaults,
 	histogramStyleDefaults,
 	lineStyleDefaults,
@@ -185,7 +188,7 @@ export class ChartApi implements IChartApi, DataUpdatesConsumer<SeriesType> {
 		);
 
 		const model = this._chartWidget.model();
-		this._timeScaleApi = new TimeScaleApi(model);
+		this._timeScaleApi = new TimeScaleApi(model, this._chartWidget.timeAxisWidget());
 	}
 
 	public remove(): void {
@@ -215,6 +218,21 @@ export class ChartApi implements IChartApi, DataUpdatesConsumer<SeriesType> {
 		const series = this._chartWidget.model().createSeries('Area', strictOptions);
 
 		const res = new SeriesApi<'Area'>(series, this, this);
+		this._seriesMap.set(res, series);
+		this._seriesMapReversed.set(series, res);
+
+		return res;
+	}
+
+	public addBaselineSeries(options: BaselineSeriesPartialOptions = {}): ISeriesApi<'Baseline'> {
+		options = migrateOptions(options);
+		patchPriceFormat(options.priceFormat);
+
+		// to avoid assigning fields to defaults we have to clone them
+		const strictOptions = merge(clone(seriesOptionsDefaults), clone(baselineStyleDefaults), options) as BaselineSeriesOptions;
+		const series = this._chartWidget.model().createSeries('Baseline', strictOptions);
+
+		const res = new SeriesApi<'Baseline'>(series, this, this);
 		this._seriesMap.set(res, series);
 		this._seriesMapReversed.set(series, res);
 
@@ -355,8 +373,8 @@ export class ChartApi implements IChartApi, DataUpdatesConsumer<SeriesType> {
 	private _sendUpdateToChart(update: DataUpdateResponse): void {
 		const model = this._chartWidget.model();
 
-		model.updateTimeScale(update.timeScale.baseIndex, update.timeScale.points);
-		update.series.forEach((value: SeriesChanges, series: Series) => series.updateData(value.data, value.fullUpdate));
+		model.updateTimeScale(update.timeScale.baseIndex, update.timeScale.points, update.timeScale.firstChangedPointIndex);
+		update.series.forEach((value: SeriesChanges, series: Series) => series.setData(value.data, value.info));
 
 		model.recalculateAllPanes();
 	}

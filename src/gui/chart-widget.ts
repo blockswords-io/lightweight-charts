@@ -123,6 +123,10 @@ export class ChartWidget implements IDestroyable {
 		return this._paneWidgets;
 	}
 
+	public timeAxisWidget(): TimeAxisWidget {
+		return this._timeAxisWidget;
+	}
+
 	public destroy(): void {
 		this._element.removeEventListener('wheel', this._onWheelBound);
 		if (this._drawRafId !== 0) {
@@ -189,10 +193,15 @@ export class ChartWidget implements IDestroyable {
 			this._paneWidgets[i].paint(invalidateMask.invalidateForPane(i).level);
 		}
 
-		this._timeAxisWidget.paint(invalidateMask.fullInvalidation());
+		if (this._options.timeScale.visible) {
+			this._timeAxisWidget.paint(invalidateMask.fullInvalidation());
+		}
 	}
 
 	public applyOptions(options: DeepPartial<ChartOptionsInternal>): void {
+		// we don't need to merge options here because it's done in chart model
+		// and since both model and widget share the same object it will be done automatically for widget as well
+		// not ideal solution for sure, but it work's for now ¯\_(ツ)_/¯
 		this._model.applyOptions(options);
 		this._updateTimeAxisVisibility();
 
@@ -343,10 +352,19 @@ export class ChartWidget implements IDestroyable {
 
 		const paneWidth = Math.max(width - leftPriceAxisWidth - rightPriceAxisWidth, 0);
 
+// <<<<<<< HEAD
 		const separatorCount = this._paneSeparators.length;
 		const separatorHeight = SEPARATOR_HEIGHT;
 		const separatorsHeight = separatorHeight * separatorCount;
 		let timeAxisHeight = this._options.timeScale.visible ? this._timeAxisWidget.optimalHeight() : 0;
+// =======
+// 		// const separatorCount = this._paneSeparators.length;
+// 		// const separatorHeight = SEPARATOR_HEIGHT;
+// 		const separatorsHeight = 0; // separatorHeight * separatorCount;
+		const timeAxisVisible = this._options.timeScale.visible;
+// 		let timeAxisHeight = timeAxisVisible ? this._timeAxisWidget.optimalHeight() : 0;
+// >>>>>>> tvmaster
+
 		// TODO: Fix it better
 		// on Hi-DPI CSS size * Device Pixel Ratio should be integer to avoid smoothing
 		if (timeAxisHeight % 2) {
@@ -391,9 +409,9 @@ export class ChartWidget implements IDestroyable {
 		}
 
 		this._timeAxisWidget.setSizes(
-			new Size(paneWidth, timeAxisHeight),
-			leftPriceAxisWidth,
-			rightPriceAxisWidth
+			new Size(timeAxisVisible ? paneWidth : 0, timeAxisHeight),
+			timeAxisVisible ? leftPriceAxisWidth : 0,
+			timeAxisVisible ? rightPriceAxisWidth : 0
 		);
 
 		this._model.setWidth(paneWidth);
@@ -633,11 +651,11 @@ export class ChartWidget implements IDestroyable {
 	}
 
 	private _isLeftAxisVisible(): boolean {
-		return this._options.leftPriceScale.visible;
+		return this._paneWidgets[0].state().leftPriceScale().options().visible;
 	}
 
 	private _isRightAxisVisible(): boolean {
-		return this._options.rightPriceScale.visible;
+		return this._paneWidgets[0].state().rightPriceScale().options().visible;
 	}
 }
 

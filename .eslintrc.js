@@ -1,3 +1,35 @@
+function getNamingConventionRules(additionalDefaultFormats = []) {
+	return [
+		{ selector: 'default', format: ['camelCase', ...additionalDefaultFormats], leadingUnderscore: 'forbid', trailingUnderscore: 'forbid' },
+
+		{ selector: 'variable', format: ['camelCase', 'UPPER_CASE'] },
+		// {
+		// 	selector: 'variable',
+		// 	types: ['boolean'],
+		// 	format: ['PascalCase'],
+		// 	prefix: ['is', 'should', 'has', 'can', 'did', 'will', 'show', 'enable', 'need'],
+		// },
+
+		{ selector: 'typeLike', format: ['PascalCase'] },
+		{ selector: 'enumMember', format: ['PascalCase'] },
+
+		{ selector: 'memberLike', modifiers: ['private'], leadingUnderscore: 'require', format: ['camelCase'] },
+		{ selector: 'memberLike', modifiers: ['protected'], leadingUnderscore: 'require', format: ['camelCase'] },
+
+		{
+			selector: 'property',
+			format: ['PascalCase'],
+			filter: {
+				match: true,
+				regex: '^(Area|Baseline|Bar|Candlestick|Histogram|Line)$',
+			},
+		},
+
+		// { selector: 'typeParameter', format: ['PascalCase'], prefix: ['T', 'U'] },
+	];
+}
+
+/** @type {import('eslint').Linter.Config} */
 module.exports = {
 	reportUnusedDisableDirectives: true,
 	env: {
@@ -9,14 +41,22 @@ module.exports = {
 		'@typescript-eslint',
 		'@typescript-eslint/tslint',
 		'deprecation',
+		'eslint-plugin-tsdoc',
 		'import',
 		'jsdoc',
 		'markdown',
 		'prefer-arrow',
 		'unicorn',
+		'jsdoc',
 	],
+	settings: {
+		jsdoc: {
+			ignoreInternal: true,
+		},
+	},
 	extends: [
 		'eslint:recommended',
+		'plugin:react/recommended',
 	],
 	parserOptions: {
 		ecmaVersion: 2019,
@@ -25,7 +65,7 @@ module.exports = {
 	overrides: [
 		{
 			// rules specific for js files only
-			files: ['**/*.js', '**/*.md/*.javascript'],
+			files: ['**/*.js', '**/*.md/*.javascript', '**/*.jsx'],
 			rules: {
 				// enforces no braces where they can be omitted
 				// http://eslint.org/docs/rules/arrow-body-style
@@ -98,8 +138,8 @@ module.exports = {
 			},
 		},
 		{
-			files: ['**/*.ts'],
-			excludedFiles: ['**/*.md/*.ts'],
+			files: ['**/*.ts', '**/*.tsx'],
+			excludedFiles: ['**/*.md/*.ts', 'dist/**'],
 			parser: '@typescript-eslint/parser',
 			extends: [
 				'plugin:@typescript-eslint/eslint-recommended',
@@ -111,6 +151,23 @@ module.exports = {
 				project: 'tsconfig.json',
 				sourceType: 'module',
 			},
+			overrides: [
+				{
+					files: ['website/**/*.tsx'],
+					parserOptions: {
+						project: 'website/tsconfig.json',
+						sourceType: 'module',
+					},
+					rules: {
+						'@typescript-eslint/naming-convention': [
+							'error',
+
+							// allow PascalCase for react components
+							...getNamingConventionRules(['PascalCase']),
+						],
+					},
+				},
+			],
 			rules: {
 				'@typescript-eslint/array-type': [
 					'error',
@@ -162,32 +219,7 @@ module.exports = {
 				],
 				'@typescript-eslint/naming-convention': [
 					'error',
-					{ selector: 'default', format: ['camelCase'], leadingUnderscore: 'forbid', trailingUnderscore: 'forbid' },
-
-					{ selector: 'variable', format: ['camelCase', 'UPPER_CASE'] },
-					// {
-					// 	selector: 'variable',
-					// 	types: ['boolean'],
-					// 	format: ['PascalCase'],
-					// 	prefix: ['is', 'should', 'has', 'can', 'did', 'will', 'show', 'enable', 'need'],
-					// },
-
-					{ selector: 'typeLike', format: ['PascalCase'] },
-					{ selector: 'enumMember', format: ['PascalCase'] },
-
-					{ selector: 'memberLike', modifiers: ['private'], leadingUnderscore: 'require', format: ['camelCase'] },
-					{ selector: 'memberLike', modifiers: ['protected'], leadingUnderscore: 'require', format: ['camelCase'] },
-
-					{
-						selector: 'property',
-						format: ['PascalCase'],
-						filter: {
-							match: true,
-							regex: '^(Area|Bar|Candlestick|Histogram|Line)$',
-						},
-					},
-
-					// { selector: 'typeParameter', format: ['PascalCase'], prefix: ['T', 'U'] },
+					...getNamingConventionRules(),
 				],
 				'@typescript-eslint/no-empty-interface': 'off',
 				'@typescript-eslint/no-empty-function': 'off',
@@ -237,6 +269,14 @@ module.exports = {
 				'@typescript-eslint/type-annotation-spacing': 'error',
 
 				'deprecation/deprecation': 'error',
+
+				'tsdoc/syntax': ['error'],
+				'jsdoc/check-examples': [
+					'error',
+					{
+						exampleCodeRegex: '/```js\\s+(.*)\\s+```/su',
+					},
+				],
 
 				// can't use at the moment - see https://github.com/typescript-eslint/typescript-eslint/issues/1824
 				// '@typescript-eslint/indent': [
@@ -346,6 +386,40 @@ module.exports = {
 						},
 					},
 				],
+			},
+		},
+		{
+			files: ['website/src/**/*.tsx'],
+			rules: {
+				'import/no-default-export': 'off',
+			},
+		},
+		{
+			files: ['dist/typings.d.ts'],
+			parser: '@typescript-eslint/parser',
+			env: {
+				browser: true,
+				node: false,
+			},
+			rules: {
+				'no-unused-vars': 'off',
+				'jsdoc/require-jsdoc': [
+					'error',
+					{
+						contexts: [
+							'TSEnumDeclaration',
+							'TSEnumMember',
+							'TSInterfaceDeclaration',
+							'TSMethodSignature',
+							'TSPropertySignature',
+							'TSTypeAliasDeclaration',
+						],
+					},
+				],
+				'jsdoc/require-param': 'error',
+				// d.ts files are mostly read by computers (to generate docs, provide intellisense, etc.)
+				// so consistent quote characaters aren't important.
+				'@typescript-eslint/quotes': 'off',
 			},
 		},
 	],

@@ -16,6 +16,7 @@
 		"moduleResolution": "node",
 		"noEmitOnError": true,
 		"noFallthroughCasesInSwitch": true,
+		"noImplicitOverride": true,
 		"noImplicitReturns": true,
 		"noUnusedLocals": true,
 		"preserveConstEnums": true,
@@ -29,7 +30,8 @@
 			"node_modules/@types"
 		],
 		"types": [
-			"_global-types"
+			"_global-types",
+			"dom-not-standarted"
 		]
 	}
 }
