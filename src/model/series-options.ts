@@ -677,7 +677,7 @@ export interface SeriesOptionsCommon {
 	 *
 	 * @defaultValue `undefined`
 	 * @example Use price range from 0 to 100 regardless the current visible range
-	 * ```js
+	 * ```
 	 * const firstSeries = chart.addLineSeries({
 	 *     autoscaleInfoProvider: () => ({
 	 *         priceRange: {
@@ -688,7 +688,7 @@ export interface SeriesOptionsCommon {
 	 * });
 	 * ```
 	 * @example Adding a small pixel margins to the price range
-	 * ```js
+	 * ```
 	 * const firstSeries = chart.addLineSeries({
 	 *     autoscaleInfoProvider: () => ({
 	 *         priceRange: {
@@ -703,7 +703,7 @@ export interface SeriesOptionsCommon {
 	 * });
 	 * ```
 	 * @example Using the default implementation to adjust the result
-	 * ```js
+	 * ```
 	 * const firstSeries = chart.addLineSeries({
 	 *     autoscaleInfoProvider: original => {
 	 *         const res = original();
@@ -730,6 +730,8 @@ export interface SeriesOptionsCommon {
 	scaleMargins?: PriceScaleMargins;
 	/** Panel this series to be added */
 	pane?: number;
+
+	stretchFactor?: number;
 }
 
 /**

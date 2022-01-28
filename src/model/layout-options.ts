@@ -82,6 +82,8 @@ export interface LayoutOptions {
 	 * @defaultValue `'Trebuchet MS', Roboto, Ubuntu, sans-serif`
 	 */
 	fontFamily: string;
+
+	stretchFactor?: number;
 }
 
 export type LayoutOptionsInternal = Omit<LayoutOptions, 'backgroundColor'>;

@@ -360,7 +360,11 @@ export class ChartModel implements IDestroyable {
 		this._watermark = new Watermark(this, options.watermark);
 
 		this.createPane();
-		this._panes[0].setStretchFactor(DEFAULT_STRETCH_FACTOR * 2);
+		if (options.layout.stretchFactor) {
+			this._panes[0].setStretchFactor(options.layout.stretchFactor);
+		} else {
+			this._panes[0].setStretchFactor(DEFAULT_STRETCH_FACTOR * 2);
+		}
 
 		this._backgroundTopColor = this._getBackgroundColor(BackgroundColorSide.Top);
 		this._backgroundBottomColor = this._getBackgroundColor(BackgroundColorSide.Bottom);
@@ -497,11 +501,11 @@ export class ChartModel implements IDestroyable {
 		this.recalculateAllPanes();
 	}
 
-	public createPane(index?: number): Pane {
+	public createPane(index?: number, stretchFactor?: number): Pane {
 		if (index !== undefined) {
 			if (index > this._panes.length) {
 				for (let i = this._panes.length; i < index; i++) {
-					this.createPane(i);
+					this.createPane(i, stretchFactor);
 				}
 			} else if (index < this._panes.length) {
 				return this._panes[index];
@@ -509,6 +513,9 @@ export class ChartModel implements IDestroyable {
 		}
 
 		const pane = new Pane(this._timeScale, this);
+		if (stretchFactor) {
+			pane.setStretchFactor(stretchFactor);
+		}
 
 		if (index !== undefined) {
 			this._panes.splice(index, 0, pane);
@@ -815,7 +822,7 @@ export class ChartModel implements IDestroyable {
 	public createSeries<T extends SeriesType>(seriesType: T, options: SeriesOptionsMap[T]): Series<T> {
 		const paneIndex = options.pane || 0;
 		if (this._panes.length - 1 <= paneIndex) {
-			this.createPane(paneIndex);
+			this.createPane(paneIndex, options.stretchFactor);
 		}
 		const pane = this._panes[paneIndex];
 		const series = this._createSeries(options, seriesType, pane);
